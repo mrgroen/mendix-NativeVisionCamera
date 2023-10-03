@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<widget id="groen.dev.nativevisioncamera.NativeVisionCamera" pluginWidget="true" needsEntityContext="true" offlineCapable="true"
+        supportedPlatform="Native"
+        xmlns="http://www.mendix.com/widget/1.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="http://www.mendix.com/widget/1.0/ ../node_modules/mendix/custom_widget.xsd">
+    <name>Native Vision Camera</name>
+    <description>Designed from the ground up to provide all features a camera app should have. You have full control over what device is used, and can even configure options such as frame rate, colorspace and more.</description>
+    <icon/>
+    <properties>
+        <propertyGroup caption="General">
+            <property key="mediaPath" type="attribute" required="true">
+                <caption>Media path</caption>
+                <description>Attribute to store the path of the temp media file.</description>
+                <attributeTypes>
+                    <attributeType name="String"/>
+                </attributeTypes>
+            </property>
+            <property key="onCaptureAction" type="action" required="false">
+                <caption>Capture action</caption>
+                <description>Logic for handling the captured media.</description>
+            </property>
+        </propertyGroup>
+    </properties>
+</widget>
