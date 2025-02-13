@@ -5,7 +5,7 @@
             <widgetFile path="NativeVisionCamera.xml"/>
         </widgetFiles>
         <files>
-            <file path="groen/dev/nativevisioncamera"/>
+            <file path="com/groendev/widget/native/nativevisioncamera"/>
         </files>
     </clientModule>
 </package>
