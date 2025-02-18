@@ -1,5 +1,5 @@
 import React, { createElement, useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { ActionValue, DynamicValue, EditableValue, ValueStatus } from "mendix";
 import {
   Camera,
@@ -10,7 +10,8 @@ import {
   VideoFile,
   TakePhotoOptions,
   TakeSnapshotOptions,
-  useLocationPermission
+  useLocationPermission,
+  Orientation
 } from 'react-native-vision-camera';
 import { CONTENT_SPACING, SAFE_AREA_PADDING, BUTTON_SIZE, BUTTON_ICON_SIZE, CAPTURE_BUTTON_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH } from '../Constants';
 import { useIsForeground } from '../hooks/useIsForeground';
@@ -53,10 +54,12 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
   const [enableNightMode, setEnableNightMode] = useState(false);
 
   // check orientation
-  const determineAndSetOrientation = () => {
-    if (SCREEN_WIDTH < SCREEN_HEIGHT) {
+  const determineAndSetOrientation = (o: Orientation) => {
+    if (o.includes('portrait')) {
+      console.debug('set orientation to portrait');
       setOrientation('portrait');
     } else {
+      console.debug('set orientation to landscape');
       setOrientation('landscape');
     }
   }
@@ -99,14 +102,14 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
     console.error(error);
   }, []);
   const onInitialized = useCallback(() => {
-    console.log('Camera initialized!');
+    console.debug('Camera initialized!');
   }, []);
   const onMediaCaptured = useCallback(
     (media: PhotoFile | VideoFile, type: 'photo' | 'video') => {
-      console.log(`Media captured! ${JSON.stringify(media)}`);
-      console.log(`type = ${JSON.stringify(type)}`);
+      console.debug(`Media captured! ${JSON.stringify(media)}`);
+      console.debug(`type = ${JSON.stringify(type)}`);
       try {
-        console.log(`setting media path to ${media.path}`);
+        console.debug(`setting media path to ${media.path}`);
         mediaPath.setValue(`${media.path}`);
       } catch (e) {
         console.error('Failed to set media path!', e);
@@ -126,7 +129,7 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
   const onCapturePressed = useCallback(async () => {
     try {
       if (camera.current == null) throw new Error('Camera ref is null!');
-      console.log('Taking photo...');
+      console.debug('Taking photo...');
       const photo = await camera.current.takePhoto(takePhotoOptions);
       onMediaCaptured(photo, 'photo');
     } catch (e) {
@@ -140,16 +143,9 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
     // Reset zoom to it's default everytime the `device` changes.
     zoom.value = device?.neutralZoom ?? 1;
   }, [zoom, device]);
-
   useEffect(() => {
     location.requestPermission();
   }, [location]);
-
-  useEffect(() => {
-    determineAndSetOrientation();
-    const subscription = Dimensions.addEventListener('change', determineAndSetOrientation);
-    return () => subscription?.remove();
-  }, []);
   //#endregion
 
   const photoHdr = format?.supportsPhotoHdr && enableHdr;
@@ -179,13 +175,14 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
           zoom={zoom.value}
           onInitialized={onInitialized}
           onError={onError}
-          onStarted={() => console.log('Camera started!')}
-          onStopped={() => console.log('Camera stopped!')}
-          onPreviewStarted={() => console.log('Preview started!')}
-          onPreviewStopped={() => console.log('Preview stopped!')}
-          onOutputOrientationChanged={(o) => console.log(`Output orientation changed to ${o}!`)}
-          onPreviewOrientationChanged={(o) => console.log(`Preview orientation changed to ${o}!`)}
-          onUIRotationChanged={(degrees) => console.log(`UI Rotation changed: ${degrees}°`)}
+          onStarted={() => console.debug('Camera started!')}
+          onStopped={() => console.debug('Camera stopped!')}
+          onPreviewStarted={() => console.debug('Preview started!')}
+          onPreviewStopped={() => console.debug('Preview stopped!')}
+          onPreviewOrientationChanged={(o) => {
+            console.debug(`Preview orientation changed to ${o}!`);
+            determineAndSetOrientation(o);
+          }}
           outputOrientation="device"
           photo={true}
           photoHdr={photoHdr}
