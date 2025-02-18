@@ -1,3 +1,34 @@
+diff --git a/node_modules/react-native-vision-camera/android/src/main/java/com/mrousavy/camera/react/CameraView+Events.kt b/node_modules/react-native-vision-camera/android/src/main/java/com/mrousavy/camera/react/CameraView+Events.kt
+index aacb5c7..e379e93 100644
+--- a/node_modules/react-native-vision-camera/android/src/main/java/com/mrousavy/camera/react/CameraView+Events.kt
++++ b/node_modules/react-native-vision-camera/android/src/main/java/com/mrousavy/camera/react/CameraView+Events.kt
+@@ -168,10 +168,22 @@ fun CameraView.invokeOnCodeScanned(barcodes: List<Barcode>, scannerFrame: CodeSc
+ }
+ 
+ private fun CameraView.sendEvent(event: Event<*>) {
+-  val reactContext = context as ReactContext
+-  val dispatcher =
+-    UIManagerHelper.getEventDispatcherForReactTag(reactContext, id)
+-  dispatcher?.dispatchEvent(event)
++  val reactContext = context
++  if (reactContext !is ReactContext) {
++    Log.e(CameraView.TAG, "sendEvent: Context is not ReactContext, skipping event dispatch.")
++    return
++  }
++  if (!reactContext.hasReactInstance()) {
++    Log.e(CameraView.TAG, "sendEvent: React Native instance not ready, skipping event dispatch.")
++    return
++  }
++  val dispatcher = UIManagerHelper.getEventDispatcherForReactTag(reactContext, id)
++  if (dispatcher == null) {
++    Log.e(CameraView.TAG, "sendEvent: Event dispatcher is null, skipping event dispatch.")
++    return
++  }
++  Log.i(CameraView.TAG, "sendEvent: Dispatching event ${event.eventName}")
++  dispatcher.dispatchEvent(event)
+ }
+ 
+ private fun errorToMap(error: Throwable): WritableMap {
 diff --git a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Audio.swift b/node_modules/react-native-vision-camera/ios/Core/CameraSession+Audio.swift
 index 3d67c8c..32a701a 100644
 --- a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Audio.swift
