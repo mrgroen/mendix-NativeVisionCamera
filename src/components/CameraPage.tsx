@@ -1,22 +1,21 @@
-import React, { createElement, useRef, useState, useMemo, useCallback } from 'react';
+import React, { createElement, useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Dimensions } from 'react-native';
-import { ActionValue, EditableValue } from "mendix";
+import { ActionValue, DynamicValue, EditableValue, ValueStatus } from "mendix";
 import {
   Camera,
-  frameRateIncluded,
-  CameraDeviceFormat,
+  useCameraDevice,
+  useCameraFormat,
   CameraRuntimeError,
-  FrameProcessorPerformanceSuggestion,
   PhotoFile,
-  sortFormats,
-  useCameraDevices,
   VideoFile,
   TakePhotoOptions,
-  TakeSnapshotOptions
+  TakeSnapshotOptions,
+  useLocationPermission
 } from 'react-native-vision-camera';
-import { CONTENT_SPACING, MAX_ZOOM_FACTOR, SAFE_AREA_PADDING, BUTTON_SIZE, BUTTON_ICON_SIZE, CAPTURE_BUTTON_SIZE } from '../Constants';
-import { useEffect } from 'react';
+import { CONTENT_SPACING, SAFE_AREA_PADDING, BUTTON_SIZE, BUTTON_ICON_SIZE, CAPTURE_BUTTON_SIZE, SCREEN_HEIGHT, SCREEN_WIDTH } from '../Constants';
 import { useIsForeground } from '../hooks/useIsForeground';
+import { useIsFocused } from '@react-navigation/core';
+import { usePreferredCameraDevice } from '../hooks/usePreferredCameraDevice';
 import { StatusBarBlurBackground } from './StatusBarBlurBackground';
 import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import IonIcon from 'react-native-vector-icons/Ionicons';
@@ -26,18 +25,27 @@ type CameraPageProps = {
   onCaptureAction?: ActionValue;
 };
 
+export const executeAction = (action?: ActionValue): void => {
+  if (action && action.canExecute && !action.isExecuting) {
+      action.execute();
+  }
+};
+
+export const isAvailable = (property: DynamicValue<any> | EditableValue<any>): boolean => {
+  return property && property.status === ValueStatus.Available && property.value;
+};
+
 export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): React.ReactElement {
   const camera = useRef<Camera>(null);
-  const zoom = { value: 1.0 };
-  const isPressingButton = { value: false };
+  const location = useLocationPermission();
+  let zoom = { value: 1.0 };
 
   // check if camera page is active
+  const isFocussed = useIsFocused()
   const isForeground = useIsForeground();
-  const isActive = isForeground;
+  const isActive = isFocussed && isForeground;
 
   // set states
-  const [isCameraInitialized, setIsCameraInitialized] = useState(false);
-  const [hasMicrophonePermission, setHasMicrophonePermission] = useState(false);
   const [orientation, setOrientation] = useState<"portrait" | "landscape">("portrait");
   const [cameraPosition, setCameraPosition] = useState<'front' | 'back'>('back');
   const [enableHdr, setEnableHdr] = useState(false);
@@ -46,111 +54,69 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
 
   // check orientation
   const determineAndSetOrientation = () => {
-    let width = Dimensions.get('window').width;
-    let height = Dimensions.get('window').height;
-    if (width < height) {
+    if (SCREEN_WIDTH < SCREEN_HEIGHT) {
       setOrientation('portrait');
     } else {
       setOrientation('landscape');
     }
   }
 
-  // camera format settings
-  const devices = useCameraDevices();
-  const device = devices[cameraPosition];
-  const formats = useMemo<CameraDeviceFormat[]>(() => {
-    if (device?.formats == null) return [];
-    return device.formats.sort(sortFormats);
-  }, [device?.formats]);
+  // camera device settings
+  const [preferredDevice] = usePreferredCameraDevice()
+  let device = useCameraDevice(cameraPosition)
 
-  //#region Memos
-  const [is60Fps, setIs60Fps] = useState(false);
-  const fps = useMemo(() => {
-    if (!is60Fps) return 30;
-
-    if (enableNightMode && !device?.supportsLowLightBoost) {
-      // User has enabled Night Mode, but Night Mode is not natively supported, so we simulate it by lowering the frame rate.
-      return 30;
-    }
-
-    const supportsHdrAt60Fps = formats.some((f) => f.supportsVideoHDR && f.frameRateRanges.some((r) => frameRateIncluded(r, 60)));
-    if (enableHdr && !supportsHdrAt60Fps) {
-      // User has enabled HDR, but HDR is not supported at 60 FPS.
-      return 30;
-    }
-
-    const supports60Fps = formats.some((f) => f.frameRateRanges.some((r) => frameRateIncluded(r, 60)));
-    if (!supports60Fps) {
-      // 60 FPS is not supported by any format.
-      return 30;
-    }
-    // We default to 30 FPS.
-    return 30;
-  }, [device?.supportsLowLightBoost, enableHdr, enableNightMode, formats, is60Fps]);
-
-  const supportsCameraFlipping = useMemo(() => devices.back != null && devices.front != null, [devices.back, devices.front]);
+  if (preferredDevice != null && preferredDevice.position === cameraPosition) {
+    // override default device with the one selected by the user in settings
+    device = preferredDevice
+  }
+  const [targetFps, setTargetFps] = useState(60)
+  const screenAspectRatio = SCREEN_HEIGHT / SCREEN_WIDTH
+  const format = useCameraFormat(device, [
+    { fps: targetFps },
+    { videoAspectRatio: screenAspectRatio },
+    { videoResolution: 'max' },
+    { photoAspectRatio: screenAspectRatio },
+    { photoResolution: 'max' },
+  ])
+  const fps = Math.min(format?.maxFps ?? 1, targetFps)
+  const supportsCameraFlipping = true;
   const supportsFlash = device?.hasFlash ?? false;
-  const supportsHdr = useMemo(() => formats.some((f) => f.supportsVideoHDR || f.supportsPhotoHDR), [formats]);
-  const supports60Fps = useMemo(() => formats.some((f) => f.frameRateRanges.some((rate) => frameRateIncluded(rate, 60))), [formats]);
+  const supportsHdr = format?.supportsPhotoHdr;
+  const supports60Fps = useMemo(() => device?.formats.some((f: any) => f.maxFps >= 60), [device?.formats])
+  const canToggleNightMode = device?.supportsLowLightBoost ?? false;
   const takePhotoOptions = useMemo<TakePhotoOptions & TakeSnapshotOptions>(
     () => ({
       flash: flash,
       quality: 90,
-      enableAutoStabilization: true
+      enableAutoStabilization: true,
+      enableShutterSound: true
     }),
     [flash]
   );
-  const canToggleNightMode = enableNightMode
-    ? true // it's enabled so you have to be able to turn it off again
-    : (device?.supportsLowLightBoost ?? false) || fps > 30; // either we have native support, or we can lower the FPS
-  //#endregion
-
-  const format = useMemo(() => {
-    let result = formats;
-    if (enableHdr) {
-      // We only filter by HDR capable formats if HDR is set to true.
-      // Otherwise we ignore the `supportsVideoHDR` property and accept formats which support HDR `true` or `false`
-      result = result.filter((f) => f.supportsVideoHDR || f.supportsPhotoHDR);
-    }
-
-    // find the first format that includes the given FPS
-    return result.find((f) => f.frameRateRanges.some((r) => frameRateIncluded(r, fps)));
-  }, [formats, fps, enableHdr]);
-
-  //#region Animated Zoom
-  // This just maps the zoom factor to a percentage value.
-  // so e.g. for [min, neutr., max] values [1, 2, 128] this would result in [0, 0.0081, 1]
-  const minZoom = device?.minZoom ?? 1;
-  const maxZoom = Math.min(device?.maxZoom ?? 1, MAX_ZOOM_FACTOR);
-  //#endregion
 
   //#region Callbacks
-  const setIsPressingButton = useCallback(
-    (_isPressingButton: boolean) => {
-      isPressingButton.value = _isPressingButton;
-    },
-    [isPressingButton],
-  );
-  // Camera callbacks
   const onError = useCallback((error: CameraRuntimeError) => {
     console.error(error);
   }, []);
   const onInitialized = useCallback(() => {
     console.log('Camera initialized!');
-    setIsCameraInitialized(true);
   }, []);
   const onMediaCaptured = useCallback(
     (media: PhotoFile | VideoFile, type: 'photo' | 'video') => {
       console.log(`Media captured! ${JSON.stringify(media)}`);
       console.log(`type = ${JSON.stringify(type)}`);
-      if (mediaPath) {
-        if (mediaPath.status !== "available") return;
+      try {
+        console.log(`setting media path to ${media.path}`);
         mediaPath.setValue(`${media.path}`);
-        if (onCaptureAction && onCaptureAction.canExecute && !onCaptureAction.isExecuting) {
-          onCaptureAction.execute();
-        }
+      } catch (e) {
+        console.error('Failed to set media path!', e);
       }
-    }, []);
+      try {
+        executeAction(onCaptureAction);
+      } catch (e) {
+        console.error('Failed to execute onCaptureAction!', e);
+      }
+    }, [mediaPath, onCaptureAction]);
   const onFlipCameraPressed = useCallback(() => {
     setCameraPosition((p) => (p === 'back' ? 'front' : 'back'));
   }, []);
@@ -170,15 +136,14 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
   //#endregion
 
   //#region Effects
-  const neutralZoom = device?.neutralZoom ?? 1;
   useEffect(() => {
-    // Run everytime the neutralZoomScaled value changes. (reset zoom when device changes)
-    zoom.value = neutralZoom;
-  }, [neutralZoom, zoom]);
+    // Reset zoom to it's default everytime the `device` changes.
+    zoom.value = device?.neutralZoom ?? 1;
+  }, [zoom, device]);
 
   useEffect(() => {
-    Camera.getMicrophonePermissionStatus().then((status) => setHasMicrophonePermission(status === 'authorized'));
-  }, []);
+    location.requestPermission();
+  }, [location]);
 
   useEffect(() => {
     determineAndSetOrientation();
@@ -187,25 +152,7 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
   }, []);
   //#endregion
 
-  if (device != null && format != null) {
-    console.log(
-      `Re-rendering camera page with ${isActive ? 'active' : 'inactive'} camera. ` +
-      `Device: "${device.name}" Format: ${format.photoWidth}x${format.photoHeight} @ ${fps}fps ` + 
-      `(${format})`
-    );
-    console.log(isCameraInitialized ? 'Camera is initialized' : 'Camera is not initialized');
-    console.log(minZoom);
-    console.log(maxZoom);
-    console.log(onMediaCaptured);
-    console.log(setIsPressingButton);
-
-  } else {
-    console.log('re-rendering camera page without active camera');
-  }
-
-  const onFrameProcessorSuggestionAvailable = useCallback((suggestion: FrameProcessorPerformanceSuggestion) => {
-    console.log(`Suggestion available! ${suggestion.type}: Can do ${suggestion.suggestedFrameProcessorFps} FPS`);
-  }, []);
+  const photoHdr = format?.supportsPhotoHdr && enableHdr;
 
   const dynamicStyles = (orientation == 'landscape') ? StyleSheet.create({
     captureButtonRing: {
@@ -216,27 +163,40 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
 
   return (
     <View style={styles.container}>
-      {device != null && (
+      {device != null ? (
         <Camera
           ref={camera}
           style={[StyleSheet.absoluteFill]}
           device={device}
-          fps={fps}
-          hdr={enableHdr}
-          lowLightBoost={device.supportsLowLightBoost && enableNightMode}
           isActive={isActive}
+          enableDepthData={true}
+          enableLocation={location.hasPermission}
+          enableZoomGesture={true}
+          exposure={0}
+          format={format}
+          fps={fps}
+          lowLightBoost={device.supportsLowLightBoost && enableNightMode}
           zoom={zoom.value}
           onInitialized={onInitialized}
           onError={onError}
-          enableDepthData={true}
-          enableZoomGesture={true}
+          onStarted={() => console.log('Camera started!')}
+          onStopped={() => console.log('Camera stopped!')}
+          onPreviewStarted={() => console.log('Preview started!')}
+          onPreviewStopped={() => console.log('Preview stopped!')}
+          onOutputOrientationChanged={(o) => console.log(`Output orientation changed to ${o}!`)}
+          onPreviewOrientationChanged={(o) => console.log(`Preview orientation changed to ${o}!`)}
+          onUIRotationChanged={(degrees) => console.log(`UI Rotation changed: ${degrees}°`)}
+          outputOrientation="device"
           photo={true}
+          photoHdr={photoHdr}
           video={false}
-          audio={hasMicrophonePermission}
-          frameProcessor={device.supportsParallelVideoProcessing ? undefined : undefined}
-          frameProcessorFps={1}
-          onFrameProcessorPerformanceSuggestionAvailable={onFrameProcessorSuggestionAvailable}
+          videoHdr={false}
+          audio={false}
         />
+      ) : (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.text}>No camera found.</Text>
+        </View>
       )}
 
       <StatusBarBlurBackground />
@@ -253,11 +213,8 @@ export function CameraPage({ mediaPath, onCaptureAction }: CameraPageProps): Rea
           </TouchableOpacity>
         )}
         {supports60Fps && (
-          <TouchableOpacity style={styles.button} onPress={() => { false ? setIs60Fps(!is60Fps) : undefined }}>
-            <Text style={styles.text}>
-              {is60Fps ? '60' : '30'}
-              {'\n'}FPS
-            </Text>
+          <TouchableOpacity style={styles.button} onPress={() => setTargetFps((t) => (t === 30 ? 60 : 30))}>
+            <Text style={styles.text}>{`${targetFps}\nFPS`}</Text>
           </TouchableOpacity>
         )}
         {supportsHdr && (
@@ -322,5 +279,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: 'bold',
     textAlign: 'center'
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   }
 });

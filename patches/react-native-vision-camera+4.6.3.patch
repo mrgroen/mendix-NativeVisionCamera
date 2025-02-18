@@ -1,0 +1,294 @@
+diff --git a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Audio.swift b/node_modules/react-native-vision-camera/ios/Core/CameraSession+Audio.swift
+index 3d67c8c..32a701a 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Audio.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/CameraSession+Audio.swift
+@@ -22,12 +22,14 @@ extension CameraSession {
+     do {
+       let audioSession = AVAudioSession.sharedInstance()
+ 
+-      try audioSession.updateCategory(AVAudioSession.Category.playAndRecord,
+-                                      mode: .videoRecording,
+-                                      options: [.mixWithOthers,
+-                                                .allowBluetoothA2DP,
+-                                                .defaultToSpeaker,
+-                                                .allowAirPlay])
++#if swift(>=4.2)
++        try audioSession.setCategory(AVAudioSession.Category.playAndRecord,
++                             mode: AVAudioSession.Mode.videoRecording,
++                             options: [.mixWithOthers, .allowBluetoothA2DP, .defaultToSpeaker, .allowAirPlay])
++#else
++        try audioSession.setCategory(AVAudioSessionCategoryPlayAndRecord,
++                             with: [.mixWithOthers, .allowBluetooth])
++#endif
+ 
+       if #available(iOS 14.5, *) {
+         // prevents the audio session from being interrupted by a phone call
+diff --git a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Configuration.swift b/node_modules/react-native-vision-camera/ios/Core/CameraSession+Configuration.swift
+index ecd2a94..5b61718 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/CameraSession+Configuration.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/CameraSession+Configuration.swift
+@@ -259,11 +259,16 @@ extension CameraSession {
+         throw CameraError.format(.invalidFps(fps: Int(maxFps)))
+       }
+ 
+-      device.activeVideoMaxFrameDuration = CMTimeMake(value: 1, timescale: minFps)
+-      device.activeVideoMinFrameDuration = CMTimeMake(value: 1, timescale: maxFps)
++        device.activeVideoMaxFrameDuration = CMTimeMake(1, minFps)
++        device.activeVideoMinFrameDuration = CMTimeMake(1, maxFps)
+     } else {
+-      device.activeVideoMaxFrameDuration = CMTime.invalid
+-      device.activeVideoMinFrameDuration = CMTime.invalid
++#if swift(>=4.2)
++        device.activeVideoMaxFrameDuration = CMTime.invalid
++        device.activeVideoMinFrameDuration = CMTime.invalid
++#else
++        device.activeVideoMaxFrameDuration = kCMTimeInvalid
++        device.activeVideoMinFrameDuration = kCMTimeInvalid
++#endif
+     }
+ 
+     // Configure Low-Light-Boost
+diff --git a/node_modules/react-native-vision-camera/ios/Core/CameraSession.swift b/node_modules/react-native-vision-camera/ios/Core/CameraSession.swift
+index 10b0f33..f4e026a 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/CameraSession.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/CameraSession.swift
+@@ -59,10 +59,17 @@ final class CameraSession: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
+                                            selector: #selector(sessionRuntimeError),
+                                            name: .AVCaptureSessionRuntimeError,
+                                            object: audioCaptureSession)
++#if swift(>=4.2)
+     NotificationCenter.default.addObserver(self,
+-                                           selector: #selector(audioSessionInterrupted),
+-                                           name: AVAudioSession.interruptionNotification,
+-                                           object: AVAudioSession.sharedInstance)
++                                          selector: #selector(audioSessionInterrupted),
++                                          name: AVAudioSession.interruptionNotification,
++                                          object: AVAudioSession.sharedInstance)
++#else
++    NotificationCenter.default.addObserver(self,
++                                          selector: #selector(audioSessionInterrupted),
++                                          name: NSNotification.Name.AVAudioSessionInterruption,
++                                          object: AVAudioSession.sharedInstance)
++#endif
+   }
+ 
+   private func initialize() {
+@@ -80,9 +87,15 @@ final class CameraSession: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
+     NotificationCenter.default.removeObserver(self,
+                                               name: .AVCaptureSessionRuntimeError,
+                                               object: audioCaptureSession)
++#if swift(>=4.2)
++    NotificationCenter.default.removeObserver(self,
++                                             name: AVAudioSession.interruptionNotification,
++                                             object: AVAudioSession.sharedInstance)
++#else
+     NotificationCenter.default.removeObserver(self,
+-                                              name: AVAudioSession.interruptionNotification,
+-                                              object: AVAudioSession.sharedInstance)
++                                             name: NSNotification.Name.AVAudioSessionInterruption,
++                                             object: AVAudioSession.sharedInstance)
++#endif
+   }
+ 
+   /**
+diff --git a/node_modules/react-native-vision-camera/ios/Core/Extensions/AVAudioSession+updateCategory.swift b/node_modules/react-native-vision-camera/ios/Core/Extensions/AVAudioSession+updateCategory.swift
+index 974000a..6d3c672 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/Extensions/AVAudioSession+updateCategory.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/Extensions/AVAudioSession+updateCategory.swift
+@@ -16,10 +16,8 @@ extension AVAudioSession {
+   func updateCategory(_ category: AVAudioSession.Category,
+                       mode: AVAudioSession.Mode,
+                       options: AVAudioSession.CategoryOptions = []) throws {
+-    if self.category != category || categoryOptions.rawValue != options.rawValue || self.mode != mode {
+-      VisionLogger.log(level: .info,
+-                       message: "Changing AVAudioSession category from \(self.category.rawValue) -> \(category.rawValue)")
+-      try setCategory(category, mode: mode, options: options)
++      if self.category != category as String || categoryOptions.rawValue != options.rawValue || self.mode != mode as String {
++          try setCategory(category as String, mode: mode as String, options: options)
+       VisionLogger.log(level: .info, message: "AVAudioSession category changed!")
+     }
+   }
+diff --git a/node_modules/react-native-vision-camera/ios/Core/Extensions/AVCaptureSession+synchronizeBuffer.swift b/node_modules/react-native-vision-camera/ios/Core/Extensions/AVCaptureSession+synchronizeBuffer.swift
+index 600bf96..c49f79c 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/Extensions/AVCaptureSession+synchronizeBuffer.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/Extensions/AVCaptureSession+synchronizeBuffer.swift
+@@ -26,7 +26,7 @@ extension AVCaptureSession {
+    */
+   func synchronizeBuffer(_ buffer: CMSampleBuffer, toSession to: AVCaptureSession) {
+     let timestamp = CMSampleBufferGetPresentationTimeStamp(buffer)
+-    let synchronizedTimestamp = CMSyncConvertTime(timestamp, from: clock, to: to.clock)
+-    CMSampleBufferSetOutputPresentationTimeStamp(buffer, newValue: synchronizedTimestamp)
++      let synchronizedTimestamp = CMSyncConvertTime(timestamp, clock, to.clock)
++      CMSampleBufferSetOutputPresentationTimeStamp(buffer, synchronizedTimestamp)
+   }
+ }
+diff --git a/node_modules/react-native-vision-camera/ios/Core/Extensions/CMSampleBuffer+copyWithTimestampOffset.swift b/node_modules/react-native-vision-camera/ios/Core/Extensions/CMSampleBuffer+copyWithTimestampOffset.swift
+index b38cfae..80bf58a 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/Extensions/CMSampleBuffer+copyWithTimestampOffset.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/Extensions/CMSampleBuffer+copyWithTimestampOffset.swift
+@@ -23,21 +23,26 @@ extension CMSampleBuffer {
+   private func getTimingInfos() throws -> [CMSampleTimingInfo] {
+     var count: CMItemCount = 0
+     let getCountStatus = CMSampleBufferGetSampleTimingInfoArray(self,
+-                                                                entryCount: 0,
+-                                                                arrayToFill: nil,
+-                                                                entriesNeededOut: &count)
++                                                                0,
++                                                                nil,
++                                                                &count)
+     guard getCountStatus == kSampleBufferError_NoError else {
+       throw TimestampAdjustmentError.failedToGetTimingInfo(status: getCountStatus)
+     }
+-
++#if swift(>=4.2)
+     let emptyTimingInfo = CMSampleTimingInfo(duration: .invalid,
+                                              presentationTimeStamp: .invalid,
+                                              decodeTimeStamp: .invalid)
++#else
++    let emptyTimingInfo = CMSampleTimingInfo(duration: kCMTimeInvalid,
++                                             presentationTimeStamp: kCMTimeInvalid,
++                                             decodeTimeStamp: kCMTimeInvalid)
++#endif
+     var infos = [CMSampleTimingInfo](repeating: emptyTimingInfo, count: count)
+     let getArrayStatus = CMSampleBufferGetSampleTimingInfoArray(self,
+-                                                                entryCount: count,
+-                                                                arrayToFill: &infos,
+-                                                                entriesNeededOut: nil)
++                                                                count,
++                                                                &infos,
++                                                                nil)
+     guard getArrayStatus == kSampleBufferError_NoError else {
+       throw TimestampAdjustmentError.failedToGetTimingInfo(status: getArrayStatus)
+     }
+@@ -60,11 +65,11 @@ extension CMSampleBuffer {
+     }
+ 
+     var newBuffer: CMSampleBuffer?
+-    let copyResult = CMSampleBufferCreateCopyWithNewTiming(allocator: nil,
+-                                                           sampleBuffer: self,
+-                                                           sampleTimingEntryCount: newTimingInfos.count,
+-                                                           sampleTimingArray: newTimingInfos,
+-                                                           sampleBufferOut: &newBuffer)
++      let copyResult = CMSampleBufferCreateCopyWithNewTiming(nil,
++                                                             self,
++                                                             newTimingInfos.count,
++                                                             newTimingInfos,
++                                                             &newBuffer)
+     guard copyResult == kSampleBufferError_NoError else {
+       throw TimestampAdjustmentError.failedToCopySampleBuffer(status: copyResult)
+     }
+diff --git a/node_modules/react-native-vision-camera/ios/Core/OrientationManager.swift b/node_modules/react-native-vision-camera/ios/Core/OrientationManager.swift
+index 413f79d..739fe98 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/OrientationManager.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/OrientationManager.swift
+@@ -101,10 +101,17 @@ final class OrientationManager {
+ 
+     // Start listening to UI-orientation changes
+     UIDevice.current.beginGeneratingDeviceOrientationNotifications()
++#if swift(>=4.2)
+     NotificationCenter.default.addObserver(self,
+-                                           selector: #selector(onDeviceOrientationChanged),
+-                                           name: UIDevice.orientationDidChangeNotification,
+-                                           object: nil)
++                                          selector: #selector(onDeviceOrientationChanged),
++                                          name: UIDevice.orientationDidChangeNotification,
++                                          object: nil)
++#else
++    NotificationCenter.default.addObserver(self,
++                                          selector: #selector(onDeviceOrientationChanged),
++                                          name: NSNotification.Name.UIDeviceOrientationDidChange,
++                                          object: nil)
++#endif
+   }
+ 
+   deinit {
+@@ -112,9 +119,15 @@ final class OrientationManager {
+     stopDeviceOrientationListener()
+     // Stop UI-orientation updates
+     UIDevice.current.endGeneratingDeviceOrientationNotifications()
++#if swift(>=4.2)
++    NotificationCenter.default.removeObserver(self,
++                                             name: UIDevice.orientationDidChangeNotification,
++                                             object: nil)
++#else
+     NotificationCenter.default.removeObserver(self,
+-                                              name: UIDevice.orientationDidChangeNotification,
+-                                              object: nil)
++                                             name: NSNotification.Name.UIDeviceOrientationDidChange,
++                                             object: nil)
++#endif
+   }
+ 
+   func setInputDevice(_ device: AVCaptureDevice) {
+diff --git a/node_modules/react-native-vision-camera/ios/Core/Recording/TrackTimeline.swift b/node_modules/react-native-vision-camera/ios/Core/Recording/TrackTimeline.swift
+index 345322f..bc7f1e5 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/Recording/TrackTimeline.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/Recording/TrackTimeline.swift
+@@ -31,7 +31,11 @@ final class TrackTimeline {
+    Gets the latency of the buffers in this timeline.
+    This is computed by (currentTime - mostRecentBuffer.timestamp)
+    */
++#if swift(>=4.2)
+   public private(set) var latency: CMTime = .zero
++#else
++  public private(set) var latency: CMTime = kCMTimeZero
++#endif
+ 
+   /**
+    Get the first actually written timestamp of this timeline
+@@ -50,14 +54,22 @@ final class TrackTimeline {
+   var targetDuration: CMTime {
+     guard let first = events.first,
+           let last = events.last else {
++#if swift(>=4.2)
+       return .zero
++#else
++      return kCMTimeZero
++#endif
+     }
+     return last.timestamp - first.timestamp - totalPauseDuration
+   }
+ 
+   var actualDuration: CMTime {
+     guard let firstTimestamp, let lastTimestamp else {
++#if swift(>=4.2)
+       return .zero
++#else
++      return kCMTimeZero
++#endif
+     }
+     return lastTimestamp - firstTimestamp - totalPauseDuration
+   }
+@@ -94,7 +106,11 @@ final class TrackTimeline {
+   }
+ 
+   var totalPauseDuration: CMTime {
++#if swift(>=4.2)
+     return pauses.reduce(.zero) { $0 + $1 }
++#else
++    return pauses.reduce(kCMTimeZero) { $0 + $1 }
++#endif
+   }
+ 
+   var description: String {
+diff --git a/node_modules/react-native-vision-camera/ios/Core/Utils/FileUtils.swift b/node_modules/react-native-vision-camera/ios/Core/Utils/FileUtils.swift
+index 489d905..825bb65 100644
+--- a/node_modules/react-native-vision-camera/ios/Core/Utils/FileUtils.swift
++++ b/node_modules/react-native-vision-camera/ios/Core/Utils/FileUtils.swift
+@@ -38,9 +38,15 @@ enum FileUtils {
+   }
+ 
+   static func writeUIImageToFile(image: UIImage, file: URL, compressionQuality: CGFloat = 1.0) throws {
++#if swift(>=4.2)
+     guard let data = image.jpegData(compressionQuality: compressionQuality) else {
+-      throw CameraError.capture(.imageDataAccessError)
++        throw CameraError.capture(.imageDataAccessError)
++    }
++#else
++    guard let data = UIImageJPEGRepresentation(image, compressionQuality) else {
++        throw CameraError.capture(.imageDataAccessError)
+     }
++#endif
+     try writeDataToFile(data: data, file: file)
+   }
+ 
