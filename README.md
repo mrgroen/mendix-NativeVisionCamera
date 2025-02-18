@@ -13,9 +13,6 @@ VisionCamera is a powerful, high-performance Camera library for React Native.
 - Mendix 10.18.3+
 - react-native 0.75.4+
 
-## Issues, suggestions and feature requests
-[link to GitHub issues]
-
 ## Development and contribution
 1. Install NPM package dependencies by using: `npm install`. If you use NPM v7.x.x, which can be checked by executing `npm -v`, execute: `npm install --legacy-peer-deps`.
 1. Run `npm start` to watch for code changes. On every change:
