@@ -14,16 +14,13 @@ export interface CustomStyle extends Style {
 
 export function NativeVisionCamera(props: NativeVisionCameraProps<CustomStyle>): ReactElement {
     const [cameraPermission, setCameraPermission] = useState<CameraPermissionStatus>();
-    const [microphonePermission, setMicrophonePermission] = useState<CameraPermissionStatus>();
 
     useEffect(() => {
-        Camera.getCameraPermissionStatus().then(setCameraPermission);
-        Camera.getMicrophonePermissionStatus().then(setMicrophonePermission);
+        const cameraStatus = Camera.getCameraPermissionStatus();
+        setCameraPermission(cameraStatus);
     }, []);
 
-    console.log(`Re-rendering. Camera: ${cameraPermission} | Microphone: ${microphonePermission}`);
-
-    if (cameraPermission == null || microphonePermission == null) {
+    if (cameraPermission == null) {
         // still loading
         return <Fragment></Fragment>;
     }
