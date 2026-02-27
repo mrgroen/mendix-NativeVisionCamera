@@ -1,7 +1,7 @@
 {
   "name": "nativevisioncamera",
   "widgetName": "NativeVisionCamera",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Designed from the ground up to provide all features a camera app should have. You have full control over what device is used, and can even configure options such as frame rate, colorspace and more.",
   "copyright": "Groen.dev",
   "author": "Marcus Groen",
@@ -37,7 +37,7 @@
     "react-native-reanimated": "1.13.1",
     "react-native-static-safe-area-insets": "2.2.0",
     "react-native-vector-icons": "10.2.0",
-    "react-native-vision-camera": "4.6.3"
+    "react-native-vision-camera": "4.6.4"
   },
   "overrides": {
     "react": "18.2.0",
